@@ -22,12 +22,17 @@ FusionEKF::FusionEKF() {
   H_laser_ = MatrixXd(2, 4);
   Hj_ = MatrixXd(3, 4);
 
+  //measurement matrix
   H_laser_ << 1.0, 0.0, 0.0, 0.0,
               0.0, 1.0, 0.0, 0.0;
+  // jacobian initialization
+  Hj_ << 1,1,0,0,
+         1,1,0,0,
+         1,1,1,1;
 
   //measurement covariance matrix - laser
   R_laser_ << 0.0225, 0.0,
-        0.0, 0.0225;
+              0.0, 0.0225;
 
   //measurement covariance matrix - radar
   R_radar_ << 0.09, 0.0, 0.0,
@@ -40,18 +45,13 @@ FusionEKF::FusionEKF() {
              0.0, 1.0, 0.0, 0.0,
              0.0, 0.0, 1000.0, 0.0,
              0.0, 0.0, 0.0, 1000.0;
-  //measurement matrix
-  ekf_.H_ = MatrixXd(2, 4);
-  ekf_.H_ << 1.0, 0.0, 0.0, 0.0,
-             0.0, 1.0, 0.0, 0.0;
 
   //the initial transition matrix F_
   ekf_.F_ = MatrixXd(4, 4);
-  ekf_.F_ << 1.0, 0.0, 1.0, 0.0,
-             0.0, 1.0, 0.0, 1.0,
+  ekf_.F_ << 1.0, 0.0, 0.0, 0.0,
+             0.0, 1.0, 0.0, 0.0,
              0.0, 0.0, 1.0, 0.0,
              0.0, 0.0, 0.0, 1.0;
-
 }
 
 /**
@@ -67,9 +67,10 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &measurement_pack) {
    ****************************************************************************/
   if (!is_initialized_) {
     // first measurement
-    cout << "EKF: " << endl;
+    //cout << "EKF: " << endl;
     ekf_.x_ = VectorXd::Zero(4);
-    ekf_.x_ << 1.0, 1.0, 1.0, 1.0;
+    // Being the first measurement, we are going to expect it to our position
+    // ekf_.x_ << 1.0, 1.0, 1.0, 1.0;
 
     if (measurement_pack.sensor_type_ == MeasurementPackage::RADAR) {
       // auxiliary variables
@@ -84,7 +85,7 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &measurement_pack) {
       ekf_.x_ << pos_x, pos_y, vel_x, vel_y;
     }
     else if (measurement_pack.sensor_type_ == MeasurementPackage::LASER) {
-      ekf_.x_ << measurement_pack.raw_measurements_[0], measurement_pack.raw_measurements_[1], 0.0, 0.0;
+      ekf_.x_ << measurement_pack.raw_measurements_(0,0), measurement_pack.raw_measurements_(1,0), 0.0, 0.0;
     }
     previous_timestamp_ = measurement_pack.timestamp_;
     // done initializing, no need to predict or update
@@ -97,20 +98,21 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &measurement_pack) {
    ****************************************************************************/
 
    // Use noise_ax = 9 and noise_ay = 9 for your Q matrix.
-  float noise_ax = 9;
-  float noise_ay = 9;
-  float dt = (measurement_pack.timestamp_ - previous_timestamp_) / 1000000.0;	//dt - expressed in seconds
+  double noise_ax = 9;
+  double noise_ay = 9;
+  double dt = (measurement_pack.timestamp_ - previous_timestamp_) / 1000000.0;	//dt - expressed in seconds
   previous_timestamp_ = measurement_pack.timestamp_;
   ekf_.F_(0,2) = dt;
   ekf_.F_(1,3) = dt;
+  double dt_2 = dt * dt;
+  double dt_3 = dt_2 * dt;
+  double dt_4 = dt_3 * dt;
   //2. Set the process covariance matrix Q
   ekf_.Q_ = MatrixXd::Zero(4, 4);
-  ekf_.Q_(0,0) = ekf_.Q_(0,2) = ekf_.Q_(2,0) = ekf_.Q_(2,2) = noise_ax * dt * dt;
-  ekf_.Q_(1,1) = ekf_.Q_(1,3) = ekf_.Q_(3,1) = ekf_.Q_(3,3) = noise_ay * dt * dt;
-  ekf_.Q_(0,0) *= dt * dt / 4.0;
-  ekf_.Q_(1,1) *= dt * dt / 4.0;
-  ekf_.Q_(0,2) = ekf_.Q_(2,0) *= dt / 2.0;
-  ekf_.Q_(1,3) = ekf_.Q_(3,1) *= dt / 2.0;
+  ekf_.Q_ <<  dt_4/4*noise_ax, 0.0, dt_3/2*noise_ax, 0.0,
+              0.0, dt_4/4*noise_ay, 0.0, dt_3/2*noise_ay,
+              dt_3/2*noise_ax, 0.0, dt_2*noise_ax, 0.0,
+              0.0, dt_3/2*noise_ay, 0.0, dt_2*noise_ay;
   ekf_.Predict();
 
   /*****************************************************************************
